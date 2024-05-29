@@ -1,0 +1,364 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{panyan}
+
+\title{Zeroth-Order Online Convex Optimization}
+\author{Yan Pan\\Carnegie Mellon University\\\texttt{ypan2@andrew.cmu.edu}}
+\date{}
+
+\begin{document}
+\maketitle
+\setlength{\baselineskip}{16pt}
+
+
+\section{Introduction}
+In online machine learning, the objective function is changing over time, and online convex optimization is needed to find the optimal solution for online learning problems~\citep{shalev2012online}.
+While stochastic gradient methods, such as stochastic gradient descent, can be applied on such learning problems, in many applications such as online advertising, gradient-based algorithms are no longer feasible since gradient information is hard to obtain.
+We refer such setting to ``zeroth-order'' or ``bandit'' online convex optimization, where we optimize without gradient information.
+Then, optimization is particularly hard in the online setting, since only limited information can be queried for each function.
+
+In this project, we review important algorithms in zeroth-order online convex optimization, where they perform gradient descent without any gradient information.
+The setting is closedly connected to the online learning problem in class, but is extended to the bandit setting.
+We provide an overview of the online convex optimization framework, where the setting will follow the framework proposed by~\cite{zinkevich2003online}.
+Then, we prove how stochastic projected gradient descent can achieve $O(\sqrt{T})$ regret in the online setting, which is the foundation of most online optimization algorithms.
+Then, we analyze the algorithm of~\cite{flaxman2005online}, where Stoke's theorem is used to approximate the gradient with function value at one point.
+We prove its regret of $O(T^{3/4})$ using the stochastic projected gradient descent framework.
+Furthermore, we show how similar ideas can be applied to slightly different settings with modifications, leading to more optimal algorithms in the two-point feedback setting~\citep{agarwal2010optimal} and smooth setting~\citep{saha2011improved}.
+In the end, we also discuss an application of the algorithm in game theory described by~\cite{bravo2018bandit}.
+
+\section{Online Convex Optimization}
+\subsection{Convex Optimization}
+We start with the definitions of convex sets and convex functions.
+A set $\Dc$ is \emph{convex} if for every $x, y \in \Dc$, $0 \le \lambda \le 1$, we have $\lambda x + (1 - \lambda) y \in \Dc$.
+A function $f : \Dc \to \R$ is \emph{convex} if $\Dc$ is convex and for every $x, y \in \Dc$, $0 \le \lambda \le 1$,
+\[
+    f(\lambda x + (1 - \lambda) y) \le \lambda f(x) + (1 - \lambda) f(y).
+\]
+In general, we can efficiently optimize convex functions with a variety of first-order (gradient-based) algorithms such as gradient descent, Adagrad~\citep{duchi2011adaptive}, Adam~\citep{kingma2015adam}.
+
+In online optimization, the main difference is that instead of a fixed function $f$, we now have a sequence of functions $f_1, \dots, f_T$. At every timestep $t$, the player is asked to choose a point $x_t$ before knowing any information about $f_t$, and then $f_t(x_t)$ and/or $\nabla f_t(x_t)$ is revealed to the player. The player may use the information to decide on $x_{t+1}$. This can be thought as an repeated game between the player who chooses $x_t$ and an adversarial who chooses $f_t$.
+In general, there is no guarantee about the functions $f_t$, besides being convex, and Lipschitz or smooth.
+The goal of online optimization is to minimize the \emph{regret} of the player, defined as
+\begin{equation}\label{eq:regret}
+    R_T := \sum_{t=1}^T f_t(x_t) - \min_{x^* \in \Dc} \sum_{t=1}^T f_t(x^*).
+\end{equation}
+
+Although the game seems hard, since the functions can be arbitrary, most classical convex optimization algorithms, such as stochastic gradient descent, works well on the problem~\citep{zinkevich2003online}. The key is that in~\Cref{eq:regret}, the regret is defined as the difference between the sum of losses and the minimizer of the sum of the functions, instead of the sum of minimizer of each function.
+When the functions $f_t$ are very arbitrary, such that they do not have a good common minimizer $x^*$, then the baseline is already very bad, so we would not be too worse compared to the baseline.
+When the functions are close to each other with a common minimizer $x^*$, then most gradients will be pointing to $x^*$, in which case gradient information will be useful.
+In the next section, we will see how online SGD achieves a regret of $O(\sqrt{T})$.
+
+
+
+\subsection{Convergence of Online SGD}
+
+We provide the algorithm for online projected stochastic gradient descent in~\Cref{alg:pgd}.
+We show the convergence rate of~\Cref{alg:pgd} in~\Cref{thm:pgd}.
+\begin{algorithm}
+    \begin{algorithmic}
+        \Require{Initialize $x_1 \in \Dc$}
+        \For{$t \gets 1, \dots, T$}
+            \State{$g_t \gets$ random vector with $\E[g_t] = \nabla f_t(x_t)$}
+            \State{$x_{t+1} \gets P_\Dc(x_t - \eta g_t)$}
+        \EndFor
+    \end{algorithmic}
+    \caption{Projected stochastic gradient descent algorithm for online convex optimization~\citep{zinkevich2003online}.}
+    \label{alg:pgd}
+\end{algorithm}
+
+\begin{theorem}\label{thm:pgd}
+    Let $\Dc \subseteq \R^d$ be a convex set and let $f_1, \dots, f_T : \Dc \to \R$ be convex functions. Suppose $\norm{g_t} \le G$ for some constant $G > 0$ in~\Cref{alg:pgd}. Then, if we run~\Cref{alg:pgd} with $\eta = \frac{R}{G\sqrt{T}}$, the expected regret is upper bounded by
+    \[
+        R_T \le RG\sqrt{T}.
+    \]
+\end{theorem}
+\begin{proof}
+    By the lower linear bound~\citep{boyd2004convex} of convex functions,
+    \begin{align*}
+        f_t(x_t) - f_t(x^*)
+        &\le \angles{\nabla f_t(x_t), x_t - x^*}\\
+        &= \E[\angles{g_t, x_t - x^*}].
+    \end{align*}
+    Then, since $\Dc$ is convex, for any $x \in \R^d$, $y \in \Dc$, $\norm{P_\Dc(x) - y} \le \norm{x - y}$. Then,
+    \begin{align*}
+        \norm{x_{t+1} - x^*}^2
+        &= \norm{P_\Dc(x_t - \eta g_t) - x^*}^2\\
+        &\le \norm{x_t - \eta g_t - x^*}^2\\
+        &= \norm{x_t - x^*}^2 + \eta^2 \norm{g_t}^2 - 2\eta \angles{g_t, x_t - x^*}\\
+        &\le \norm{x_t - x^*}^2 + \eta^2 G^2 + 2\eta(f_t(x^*) - f_t(x_t)).
+    \end{align*}
+    Rearranging terms we get
+    \[
+        f_t(x_t) - f_t(x^*) \le \frac{1}{2\eta}\parens*{\norm{x_t - x^*}^2 - \norm{x_{t+1} - x^*}^2 + \eta^2 G^2}.
+    \]
+    Then, summing up and taking expectation, we have
+    \begin{align*}
+        \sum_{t=1}^T \E[f_t(x_t)] - \sum_{t=1}^T f_t(x^*)
+        &\le \frac{1}{2\eta}(\norm{x_0 - x^*}^2 - \norm{x_{T+1} - x^*}^2 + \eta^2 G^2T)\\
+        &\le \frac{\norm{x_0 - x^*}^2}{2\eta} + \frac{\eta G^2 T}{2}\\
+        &\le \frac{R^2}{2\eta} + \frac{\eta G^2 T}{2}.
+    \end{align*}
+    Let $\eta = \frac{R}{G\sqrt{T}}$, we have $R_T  \le RG\sqrt{T}$.
+\end{proof}
+
+\section{Zeroth-Order Online Convex Optimization}
+
+In zeroth-order online convex optimization, access to the gradient is no longer feasible.
+At every timestep, only the function value $f_t(x_t)$ is observed, and we need to pick $x_{t+1}$ immediately without any further information.
+In the offline setting, the problem is not particularly hard, since there are various ways to approximate the geometry of the function.
+For example, we can approximate the partial derivative of $f$ at $x$ by
+\[
+    \angles{\nabla f(x), e_i} = \lim_{\delta \to 0} \frac{f(x + \delta e_i) - f(x)}{\delta} \approx \frac{f(x + \delta e_i) - f(x)}{\delta}
+\]
+for some sufficiently small delta. However, in $\R^d$, we would need $d$ estimates to obtain an estimate of the full gradient, but this is impossible in online optimization, since once we observed $f_t(x_t)$, the function changes to $f_{t+1}$, and we can no longer obtain any information about $f_t$.
+
+\cite{flaxman2005online} provides a randomized solution to approximate the stochastic gradient of the objective function with only one point feedback. The key is to use Stoke's theorem to formulate the relationship between the gradient and function value over distributions on the unit ball and sphere. Formally, let $\Sc$ be the unit sphere and $\Bc$ be the unit closed ball, by Stoke's theorem, we have
+\[
+    \nabla \int_{\delta\Bc} f(x + v)~dv = \int_{\delta\Sc} f(x + u) \frac{u}{\norm{u}}~du
+\]
+Then, if we define $\wh{f}(x_t) = \E_{u \sim \Bc}[f(x + \delta u)]$, we have
+\begin{equation}
+    \nabla \wh{f}(x_t) = \E_{u \sim \Sc}\bracks*{\frac{d}{\delta}f(x + \delta u)u}.
+\end{equation}
+When $f$ is Lipschitz, $\wh{f}$ is close to $f$ since it is the ``average'' of $f$ in a small neighborhood of $f$, so if we optimize $\wh{f}$, we also approximately optimize $f$.
+This leads to~\Cref{alg1}.
+\begin{algorithm}
+    \begin{algorithmic}
+        \For{$t \gets 1, \dots, T$}
+            \State{Draw $u_t \sim \Sc$ uniformly at random}
+            \State{$g_t \gets \frac{d}{\delta} f_t(x_t + \delta u_t) u_t$}
+            \State{$x_{t+1} \gets P_\Dc(x_t - \eta g_t)$}
+        \EndFor
+    \end{algorithmic}
+    \caption{Algorithm for zeroth-order online convex optimization with $O(T^{3/4})$ regret by~\cite{flaxman2005online}.}
+    \label{alg1}
+\end{algorithm}
+
+We make the following assumptions. In the online convex optimization setting, we have a convex and compact constraint set $\Dc \subseteq \R^d$, with $r\Bc \subseteq \Dc \subseteq R\Bc$. We are given a sequence of functions $f_1, \dots, f_T : \Dc \to \R$, which are all convex and $L$-Lipschitz. In addition, each $f_t$ is bounded by $\norm{f_t}_\infty := \sup_{x \in \Dc}(x) \le M$.
+If the assumptions are satisfied, we have~\Cref{thm:main} that establishes the convergence rate for~\Cref{alg1}.
+
+\begin{theorem}
+    \label{thm:main}
+    If the assumptions hold, then the expected regret of~\Cref{alg1} is upper bounded by
+    \[
+        R_T \le 2T^{3/4}\sqrt{(2 + 1/r)RMdL} = O(T^{3/4}).
+    \]
+\end{theorem}
+
+\begin{lemma}
+    Let $\wh{f}_t(x_t) = \E_{u_t \sim \Bc}[f_t(x_t + \delta u_t)]$, then $\E[g_t] = \nabla \wh{f}(x_t)$.
+\end{lemma}
+\begin{proof}
+    Using the fact that $\vol(\delta \Bc) = \frac{\delta}{d} \vol(\delta \Sc)$, we have
+    \begin{align*}
+        \E[g_t]
+        &= \frac{1}{\vol(\delta \Sc)}\frac{d}{\delta} \int_{\delta \Sc} f_t(x_t + u) \frac{u}{\norm{u}} ~du\\
+        &= \frac{1}{\vol(\delta \Bc)} \nabla \int_{\delta \Bc} f_t(x_t + u)~du\\
+        &= \nabla \wh{f}_t(x_t). \qedhere
+    \end{align*}
+\end{proof}
+
+\begin{lemma}
+    The optimum in $(1 - \delta/r)\Dc$ satisfy
+    \[
+        \min_{x^* \in (1 - \delta/r)\Dc} \sum_{t=1}^T f_t(x^*) \le \frac{\delta LT}{r} + \min_{x^* \in \Dc} \sum_{t=1}^T f_t(x^*).
+    \]
+\end{lemma}
+\begin{proof}
+    Since $f_t$ is $L$-Lipschitz, $\sum_{t=1}^T f_t$ is $LT$-Lipschitz, so let
+    \[
+        x^* := \argmin_{x \in \Dc} \sum_{t=1}^T f_t(x),
+    \]
+    we have
+    \begin{align*}
+        \min_{x^* \in (1 - \delta/r)\Dc} \sum_{t=1}^T f_t(x^*)
+        &\le \sum_{t=1}^T f_t(P_{(1 - \delta/r)\Dc}(x^*))\\
+        &\le \sum_{t=1}^T f_t(x^*) + \sum_{t=1}^T \abs{f_t(P_{(1 - \delta/r)\Dc}(x^*)) - f_t(x^*)}\\
+        &\le \sum_{t=1}^T f_t(x^*) + TL\norm{P_{(1 - \delta/r)\Dc}(x^*) - x^*}\\
+        &\le \sum_{t=1}^T f_t(x^*) + \frac{\delta LT}{r}. \qedhere
+    \end{align*}
+\end{proof}
+
+\begin{lemma}
+    For any point $x \in (1 - \delta/r)\Dc$, $x + \delta \Bc \subseteq \Dc$.
+\end{lemma}
+\begin{proof}
+    This follows from
+    \[
+        (1 - \delta/r)\Dc + \delta \Bc \subseteq (1 - \delta/r)\Dc + (\delta/r) \Dc \subseteq \Dc. \qedhere
+    \]
+\end{proof}
+
+\begin{lemma}\label{lm:whf_diff}
+    For any $x \in \Dc$, $\abs{\wh{f}_t(x) - f_t(x)} \le \delta L$.
+\end{lemma}
+\begin{proof}
+    Since $f_t$ is $L$-Lipschitz, we have
+    \begin{align*}
+        \abs{\wh{f}_t(x) - f_t(x)}
+        &= \abs*{\frac{1}{\vol(\delta \Bc)} \int_{\delta\Bc} f(x + u)~du - f(x)}\\
+        &\le \frac{1}{\vol(\delta \Bc)}\int_{\delta \Bc} \abs{f(x + u) - f(x)}~du\\
+        &\le \frac{1}{\vol(\delta \Bc)}\int_{\delta \Bc} L \norm{u}~du\\
+        &\le \frac{1}{\vol(\delta \Bc)}\int_{\delta \Bc} \delta L~du\\
+        &\le \delta L. \qedhere
+    \end{align*}
+\end{proof}
+
+\begin{proof}[Proof of \Cref{thm:main}]
+    We follow the proof of the general online gradient descent.
+    We first bound $\norm{g_t}$ using the upper bound of $\abs{f_t}$
+    \[
+        \norm{g_t} = \norm*{\frac{d}{\delta} f_t(x_t + \delta u_t) u_t} \le \frac{Md}{\delta}.
+    \]
+    Let $G := \frac{Md}{\delta}$.
+    By \Cref{thm:pgd}, we have the regret of $\{\wh{f}_t\}$ is bounded by
+    \[
+        \wh{R}_T \le RG\sqrt{T} = \frac{RMd\sqrt{T}}{\delta}.
+    \]
+
+    Then by~\Cref{lm:whf_diff}, we have
+    \begin{align*}
+        R_T &= \sum_{t=1}^T f_t(x_t) - \min_{x^* \in \Dc} \sum_{t=1}^T f_t(x^*)\\
+        &\le \sum_{t=1}^T f_t(x_t) - \min_{x^* \in \Dc} \sum_{t=1}^T \wh{f_t}(x^*) + \delta LT\\
+        &\le \sum_{t=1}^T f_t(x_t) - \min_{x^* \in (1 - \delta/r)\Dc} \sum_{t=1}^T \wh{f_t}(x^*) + (1 + 1/r)\delta LT\\
+        &= \wh{R}_T + \sum_{t=1}^T \abs{\wh{f}_t(x_t) - f_t(x_t)} + (1 + 1/r)\delta LT\\
+        &\le \wh{R}_T + (2 + 1/r)\delta LT\\
+        &\le \frac{RMd\sqrt{T}}{\delta} + (2 + 1/r)\delta LT.
+    \end{align*}
+    Choosing $\delta = T^{-1/4}\sqrt{\frac{RMd}{(2 + 1/r)L}}$, we have
+    \[
+        R_T \le 2T^{3/4}\sqrt{(2 + 1/r)RMdL} = O(T^{3/4}). \qedhere
+    \]
+\end{proof}
+
+\subsection{Two-Point Estimates}
+One potential problem with the bound in~\Cref{thm:main} is that it is dependent on the upper bound for $\norm{f_t}_{\infty}$. When the function values are too large, the variance of the stochastic gradient will be large, which affects the performance of the algorithm. In particular, an adversarial could simply add a constant term to each function to slow down the convergence of the algorithm, without changing the regret objective. Such assumption is not realistic and is typically unnecessary in general convex optimization problems.
+
+\cite{agarwal2010optimal} shows that when we have two-point estimates of the gradient, we can improve the estimation of the stochastic gradient and remove the dependence on $\norm{f_t}_{\infty}$.
+The key idea is that we can approximate the gradient by
+\[
+    \nabla f(x) \approx \E_{u \sim \Sc} \bracks*{\frac{d}{2\delta}(f(x + \delta u) - f(x - \delta u)) u}.
+\]
+\begin{algorithm}
+    \begin{algorithmic}
+        \For{$t \gets 1, \dots, T$}
+            \State{Draw $u_t \sim \Sc$ uniformly at random}
+            \State{$g_t \gets \frac{d}{2\delta} (f_t(x_t + \delta u_t) - f_t(x_t - \delta u_t)) u_t$}
+            \State{$x_{t+1} \gets P_\Dc(x_t - \eta g_t)$}
+        \EndFor
+    \end{algorithmic}
+    \caption{Algorithm for zeroth-order online convex optimization with two point feedback, with $O(\sqrt{T})$ regret by~\cite{agarwal2010optimal}.}
+    \label{alg:2point}
+\end{algorithm}
+\begin{theorem}
+    If the assumptions hold, with infinitesimal $\delta$, the expected regret of~\Cref{alg:2point} is upper bounded by
+    \[
+        R_T \le RLd\sqrt{T}.
+    \]
+    In particular, with $\delta = O(\frac{1}{\sqrt{T}})$, we have $R_T = O(\sqrt{T})$.
+\end{theorem}
+\begin{proof}
+    We bound $\norm{g_t}$ by
+    \begin{align*}
+        \norm{g_t}
+        &= \norm*{\frac{d}{2\delta}(f_t(x_t + \delta u) - f_t(x_t - \delta u))u}\\
+        &\le \frac{d}{2\delta} \abs{f_t(x_t + \delta u) - f_t(x_t - \delta u)}\\
+        &\le \frac{d}{2\delta} L\norm{2\delta u}\\
+        &= Ld.
+    \end{align*}
+    Then, let $G := Ld$, by~\Cref{thm:pgd}, we have the regret of $\{\wh{f}_t\}$ is bounded by
+    \[
+        \wh{R}_T \le RG\sqrt{T} = RLd\sqrt{T}.
+    \]
+    Then, similar to the proof of~\Cref{thm:main}, we have
+    \begin{align*}
+        R_T &\le \wh{R}_T + (2 + 1/r)\delta LT\\
+        &\le RLd\sqrt{T} + (2 + 1/r)\delta LT.
+    \end{align*}
+    Choosing $\delta \to 0^+$, we have
+    \[
+        R_T \le RLd\sqrt{T}.
+    \]
+    In particular, it suffices to choose $\delta = O(\frac{1}{\sqrt{T}})$ to get $R_T = O(\sqrt{T})$.
+\end{proof}
+When we have two point feedback, we can see that we can get nearly as good as when we have the full gradient, in which case we achieve a regret of at most $RL\sqrt{T}$. There is only an additional multiplier of $d$ and an extra term that is negligible if we choose sufficiently small $\delta$.
+
+\subsection{Smooth Objective Function}
+
+The gradient estimation given by~\cite{flaxman2005online} is a generic idea that can be used to turn first-order online convex optimization algorithms to zeroth-order algorithms.
+Similar ideas can be applied to other convex optimization algorithms.
+\cite{saha2011improved} shows how the algorithm can be applied to an interior point method proposed by~\cite{abernethy2008competing,abernethy2009beating}.
+Specifically, in the original algorithm, a vector is sampled from the unit sphere, while in the algorithm by~\cite{saha2011improved}, a $\nu$-self-concordant barrier function $R$ is used and the vector is sampled from an ellipsoid based on $R$.
+The algorithm is described in~\Cref{alg:ipm}.
+
+\begin{algorithm}
+    \begin{algorithmic}
+        \Require{$R$ is a $\nu$-self-concordant barrier function for $\Dc$}
+        \For{$t \gets 1, \dots, T$}
+            \State{$A_t \gets \sqrt{(\nabla^2 R(x_t))^{-1}}$}
+            \State{Draw $u_t \sim \Sc$ uniformly at random}
+            \State{$g_t \gets \frac{d}{\delta} f_t(x_t + \delta A_t u_t) A_t^{-1} u_t$}
+            \State{$x_{t+1} \gets \argmin_{x \in \Dc} \eta \sum_{s=1}^t \angles{g_s, x} + R(x)$}
+        \EndFor
+    \end{algorithmic}
+    \caption{Zeroth-order online convex optimization algorithm for smooth functions by~\cite{saha2011improved}.}
+    \label{alg:ipm}
+\end{algorithm}
+
+We need an additional assumption that $f$ is $L$-smooth.
+\begin{definition}
+    A convex function $f : \Dc \to \R$ is \emph{$L$-smooth} if for all $x,y \in \Dc$,
+    \[
+        f(y) \le f(x) + \angles{\nabla f(x), y - x} + \frac{L}{2} \norm{y - x}^2.
+    \]
+\end{definition}
+
+\begin{lemma}
+    Let $\wh{f}_t(x_t) = \E_{u \sim \Bc}[f_t(x_t + \delta A_t u)]$, then $\E[g_t] = \nabla \wh{f}(x_t)$.
+\end{lemma}
+\begin{proof}
+    We define $F_t(x) := f_t(A_t x)$, which allows us to apply the chain rule.
+    \begin{align*}
+        \E[g_t]
+        &= \E_{u \sim \Sc} \bracks*{\frac{d}{\delta} f_t(x_t + \delta A_t u) A_t^{-1} u}\\
+        &= A_t^{-1} \E_{u \sim \Sc} \bracks*{\frac{d}{\delta} f_t(x_t + \delta A_t u) u}\\
+        &= A_t^{-1} \E_{u \sim \Sc} \bracks*{\frac{d}{\delta} F_t(A_t^{-1} x_t + \delta u) u}\\
+        &= A_t^{-1} \wh{F}_t(A_t^{-1} x_t)\\
+        &= A_t^{-1} A_t \wh{f}_t(x_t)\\
+        &= \wh{f}_t(x_t). \qedhere
+    \end{align*}
+\end{proof}
+
+\begin{theorem}
+    Assume that $f_1, \dots, f_T : \Dc \to \R$ are $L$-smooth, with $\norm{f_t}_\infty \le M$, then running~\Cref{alg:ipm} with appropriate choices of $\eta, \delta$, the expected regret is upper bounded by
+    \[
+        R_t \le 3(L\nu \log T)^{1/3} (MdR)^{2/3} T^{2/3} + \parens*{\frac{2M}{R} + RL}\sqrt{T} = \tilde{O}(T^{2/3}).
+    \]
+\end{theorem}
+
+We will not show the proof of the theorem here, and will refer the reader to the original paper by~\cite{saha2011improved}. But notice that $\tilde{O}(T^{2/3})$ is a significant improvement compared to the $O(T^{3/4})$ bound. It is a question that whether we can use this idea to turn other first-order online convex optimization algorithm into bandit algorithms and achieve better regret bound.
+
+\subsection{Application in Game Theory}
+Multi-person repeated concave games can be thought as a special case for online learning. We assume that each player has a fixed concave utility function $u_i : \Ac \to \R$ and the set of all possible actions $\Ac = \prod_{i=1}^N \Ac_i$ is convex. Then, notice that while the utility functions are fixed, the players can only control their own actions, but not the actions of other players. Then, for each player $i$, we can define
+\[
+    f_{t,i}(x_{t,i}) = u_i(x_{t,i}, x_{t,-i})
+\]
+which is concave. Hence, the players can use the online learning framework as a strategy to find actions.
+When the game is unknown to the player, it is a zeroth-order online optimization problem, since gradient information is not available. Then, the algorithm by~\cite{flaxman2005online} can be applied to solve for future actions.
+\cite{bravo2018bandit} shows that for concave $N$-person monotone games, if each player chooses his or her action according to the algorithm by~\cite{flaxman2005online}, the game would converge to a Nash equilibrium.
+
+\section{Discussion}
+The bandit optimization is a topic that I wanted to look into since I learned online optimization in the convex optimization course at CMU.
+I was surprised that there can be such a simple way of using first-order algorithms in the zeroth-order setting.
+The proof was also simple and elegant and can be summarized in a few pages.
+While I was looking for examples of online learning, I realized that many natural applications of online learning does not involve the definition of a differentiable model like in machine learning, and more of them are like ``bandits.''
+As a result, the bandit optimization framework can be applied to a variety of such problems.
+I was also excited to see that there is a connection between bandit optimization and game theory.
+I realized that online learning is a very generic and powerful setting, and it would always be a great research idea to try the online learning framework when studying sequential decision making problems.
+
+\section{Conclusion}
+In conclusion, this report provides a comprehensive review of important algorithms in zeroth-order online convex optimization. We started with an overview of the online convex optimization framework and demonstrated how stochastic projected gradient descent can achieve $O(\sqrt{T})$ regret in the online setting. We then analyzed the algorithm of~\cite{flaxman2005online}, which approximates the gradient with function value at one point using Stoke's theorem and proved its expected regret of $O(T^{3/4})$. We also explored how similar ideas can be applied to slightly different settings, leading to more optimal algorithms in the two-point feedback and smooth settings. Finally, we discussed an application of the algorithm in game theory described by~\cite{bravo2018bandit}. This report highlights the significance of online convex optimization in machine learning and provides insights into various algorithms that can be used to optimize online learning problems in the absence of gradient information.
+
+\bibliography{references.bib}
+\bibliographystyle{apalike}
+\end{document}
